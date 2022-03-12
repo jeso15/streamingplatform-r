@@ -1,0 +1,392 @@
+---
+title: "Midterm Project: Streaming Platforms"
+author: "Padma Prabagaran | Shuai Zhu | Landry Tun"
+date: "10/16/2021"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(dplyr)
+library(ggplot2)
+library(cowplot)
+library(caret)
+library(tidyr)
+library(maps)
+library(plotly)
+library(magrittr) ## package for pipe operators
+library(leaflet) ## package for map widgets
+library(webshot)
+```
+
+
+## Movies on Netflix, Prime Video, Hulu and Disney+
+<font size = "5">
+
+- Source: Kaggle 
+- Author: Ruchi Bhatia 
+- About this Dataset:  
+  - Consists of 17 variables: Title, Age, IMDb Rating, Rotten Tomatoes Rating, Runtime, Language, Location
+  
+
+</font>
+
+
+```{r, echo=FALSE, fig.align='right', out.height="15%",out.width="15%",tidy=TRUE, out.extra='style="float:center; padding:20px"'}
+  knitr::include_graphics('./netflix.png')
+  knitr::include_graphics('./disney.png')
+  knitr::include_graphics('./prime.png')
+  knitr::include_graphics('./hulu.png')
+
+```
+
+## Proportion of Movies on each Streaming Platform
+
+- The streaming platform with the most number of movies in the dataset is Amazon's Prime Videos
+
+```{r piechartPorportion, tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 8, fig.height = 4, warning = FALSE}
+df = read.csv("movies.csv", sep=",", header=TRUE)
+count_netflix = nrow(df[df$Netflix==1,])
+count_hulu = nrow(df[df$Hulu==1,])
+count_disney = nrow(df[df$Disney.==1,])
+count_primevideo = nrow(df[df$Prime.Video==1,])
+count_platform = c(count_netflix,count_hulu,count_disney,count_primevideo)
+count_platform = data.frame(cbind(count = count_platform,platform = c("Netflix","Hulu","Disney+","Prime Video")))%>%
+  transform(count = as.numeric(count))%>%
+  mutate(prop = count/sum(count))%>%
+  mutate(labels = scales::percent(prop))
+
+#ggplot(count_platform, aes(x = "", y = prop, fill = platform)) +
+#  ggtitle("Proportion of Movies on Each Platform") +
+#  geom_col() +
+#  scale_fill_manual(values =c( "#006e99","#66aa33","#E50914","#FF9900")) +
+#  geom_text(aes(label = labels),position = position_stack(vjust = 0.5)) +
+#  coord_polar(theta = "y") +
+#  theme_void()
+colors <- c( "#E50914","#66aa33","#006e99","#FF9900")
+piechart = plot_ly(count_platform,
+                   labels = ~platform,
+                   values = ~count,
+                   marker = list(colors = colors,line = list(color = '#FFFFFF', width = 1)),
+                   type = "pie")
+piechart
+
+```
+
+```{r import data, echo=FALSE}
+movies = read.csv("movies.csv", sep=",", header=TRUE)
+movies = na.omit(movies)
+movies$IMDb = gsub("/.*$","",movies$IMDb)
+movies$Rotten.Tomatoes =  gsub("/.*$","",movies$Rotten.Tomatoes)
+
+movies <- movies %>%
+  na.omit() %>%
+  mutate(IMDb = as.numeric(IMDb)) %>%
+  mutate(Rotten.Tomatoes = as.numeric(Rotten.Tomatoes))
+
+netflix <- movies %>%
+  filter(Netflix == 1) %>%
+  mutate(Platform = "Netflix") %>%
+  mutate(iqr = IQR(Runtime), 
+         Q1 = fivenum(Runtime)[2],
+         Q3 = fivenum(Runtime)[4], 
+         UF = Q3 + (1.5 * iqr),
+         LF = Q1 - (1.5 * iqr)) %>%
+  filter(Runtime > LF[1], Runtime < UF[1])
+
+
+hulu <- movies %>%
+  filter(Hulu == 1) %>%
+  mutate(Platform = "Hulu") %>%
+  mutate(iqr = IQR(Runtime), 
+         Q1 = fivenum(Runtime)[2],
+         Q3 = fivenum(Runtime)[4], 
+         UF = Q3 + (1.5 * iqr),
+         LF = Q1 - (1.5 * iqr)) %>%
+  filter(Runtime > LF[1], Runtime < UF[1])
+
+disney <- movies %>%
+  filter(Disney. == 1, Runtime < 400) %>%
+  mutate(Platform = "Disney") %>%
+  mutate(iqr = IQR(Runtime), 
+         Q1 = fivenum(Runtime)[2],
+         Q3 = fivenum(Runtime)[4], 
+         UF = Q3 + (1.5 * iqr),
+         LF = Q1 - (1.5 * iqr))
+
+prime_vid <- movies %>%
+  filter(Prime.Video == 1) %>%
+  mutate(Platform = "Prime") %>%
+  mutate(iqr = IQR(Runtime), 
+         Q1 = fivenum(Runtime)[2],
+         Q3 = fivenum(Runtime)[4], 
+         UF = Q3 + (1.5 * iqr),
+         LF = Q1 - (1.5 * iqr)) %>%
+  filter(Runtime > LF[1], Runtime < UF[1])
+
+movies2 <- rbind(netflix,hulu,disney,prime_vid)
+```
+
+
+## Distribution of Runtime across the four Platforms
+<font size = "5">
+
+- Disney has the largest spread of runtime this is due to the fact that the dataset includes 2-3 minutes videos that are grouped as movies for kids
+- The median runtimes for all the platforms is about 87 to 100 minutes
+
+</font>
+
+```{r runtime boxplot, tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 7, fig.height = 3}
+runtime_plot = ggplot(movies2, aes(x=Runtime,y=Platform,fill=Platform)) + 
+  geom_boxplot() +
+  scale_fill_manual(values =c( "#006e99","#66aa33","#E50914","#FF9900")) 
+runtime_plot
+#summary(netflix$Runtime)
+#summary(hulu$Runtime)
+#summary(disney$Runtime)
+#summary(prime_vid$Runtime)
+
+
+
+
+
+```
+
+
+
+
+## Number of movies per selected age group on each platform 
+<font size = "5">
+
+- This graph displays the number of movies each platform has for each age category 
+
+</font>
+```{r age barchart, tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 7, fig.height = 4}
+movies_df <- movies2 %>%
+  filter(Age != "")
+
+age_bar <- ggplot(movies_df, aes(fill=Platform, x=Platform)) + 
+    geom_bar(position="dodge", stat="count") +
+    scale_fill_manual(values =c( "#006e99","#66aa33","#E50914","#FF9900"))  +
+    ggtitle("Number of Movies by Age on Streaming Platforms") +
+    facet_wrap(~Age) +
+    theme(legend.position="none") +
+    xlab("")
+ggplotly(age_bar)
+
+
+```
+
+## Top 50 English Movies plotted by their Ratings and Runtime
+<font size = "4">
+
+- This graph plots runtime against the two rating criteras in the dataset.
+- We can see that there primarly a positive between the ratings but runtime seems to have no effect on the points.
+
+</font>
+
+```{r 3d plot,  tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 7, fig.height = 3}
+
+moviesTop50 <- movies %>%
+  na.omit(IMDb) %>%
+  arrange(desc(IMDb)) %>%
+  mutate(Rotten.Tomatoes = Rotten.Tomatoes/10) %>%
+  filter(Language == "English") %>%
+  top_n(50,wt = Runtime) # default = last variable of tbl -> Runtime
+
+titles <- c(moviesTop50$Title)
+axx <- list(
+  title = "IMDb Ratings"
+)
+
+axy <- list(
+  title = "Rotten Tomatoes Ratings"
+)
+
+axz <- list(
+  title = "Runtime (mins)"
+)
+
+fig <- plot_ly(x=moviesTop50$IMDb,
+        y=moviesTop50$Rotten.Tomatoes,
+        z=moviesTop50$Runtime,
+        type="scatter3d",
+        text = titles,
+        hovertemplate = paste('<b>IMDb</b>: %{x}',
+                        '<br><b>RTom</b>: %{y}',
+                        '<br><b>Time</b>: %{z}<br>',
+                        '<b>%{text}</b>'),
+        mode="markers",
+        color=moviesTop50$Runtime) 
+
+fig <- fig %>% layout(scene = list(xaxis=axx,yaxis=axy,zaxis=axz))
+
+fig
+
+```
+
+## Average IMDb Rating by Country
+<font size = "4">
+
+- The countries with a darker blue have lower average IMDb rating and the the ones in that are lighter have a higher average
+- The country with the highest average IMDb rating in this dataset is Mongolia
+
+</font>
+
+```{r map,   tidy = TRUE, include = FALSE, echo = FALSE, fig.width = 6, fig.height = 5}
+df = read.csv("movies.csv", sep=",", header=TRUE)
+
+country_IMDb = df %>%
+  select(IMDb,Country)%>%
+  separate('Country', "Country", sep=",", extra="drop")%>%
+  separate( 'IMDb', "IMDb", sep="/", extra="drop")%>%
+  filter(!(IMDb ==""),!(Country ==""))%>%
+  group_by(Country)%>%
+  transform(IMDb = as.numeric(IMDb))%>%
+  filter(IMDb <= 10)
+
+averageIMDb_country = aggregate(country_IMDb$IMDb,by = list(country_IMDb$Country),FUN = mean)
+
+averageIMDb_country%>%
+  arrange(desc(x))
+
+colnames(averageIMDb_country) = c("country","mean")
+
+country_name = averageIMDb_country$country
+for (i in 1:length(averageIMDb_country$country)){
+  if (averageIMDb_country$country[i] =="United Kingdom"){
+    averageIMDb_country$country[i] = "UK"
+  }else if(averageIMDb_country$country[i] =="United States"){
+    averageIMDb_country$country[i] = "USA"
+  }else{
+    
+  }
+}
+
+world <- map_data("world")
+
+oneofworld = world%>%
+  group_by(region)%>%
+  slice_head(n = 1)%>%
+  select(long,lat,region)%>%
+  filter(region %in% averageIMDb_country$country)
+
+averageIMDb_country = averageIMDb_country%>%
+  filter(country %in% oneofworld$region)
+
+map_mean = cbind(oneofworld,averageIMDb_country)
+mapplot <- ggplot() +
+  geom_map(
+    data = world, map = world,
+    aes(long, lat, map_id = region),
+    color = "white", fill = "lightgray", size = 0.1)+
+  geom_map(data = map_mean, map=world,
+                  aes(fill=mean, map_id=region),
+                  colour="#7f7f7f", size=0.5)+
+  labs(fill="rating", title="Average movie rating per location ", x="long", y="lat") 
+
+mapplot
+
+```
+
+```{r mapdisplay, tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 7, fig.height = 3, warning = FALSE}
+oneofworld = world%>%
+  group_by(region)%>%
+  slice_head(n = 1)%>%
+  select(long,lat,region)%>%
+  filter(region %in% averageIMDb_country$country)
+
+averageIMDb_country = averageIMDb_country%>%
+  filter(country %in% oneofworld$region)
+
+map_mean = cbind(oneofworld,averageIMDb_country)
+mapplot <- ggplot() +
+  geom_map(
+    data = world, map = world,
+    aes(long, lat, map_id = region),
+    color = "white", fill = "lightgray", size = 0.1)+
+  geom_map(data = map_mean, map=world,
+                  aes(fill=mean, map_id=region),
+                  colour="#7f7f7f", size=0.5)+
+  labs(fill="rating", title="Average movie rating per location ", x="longitude", y="latitude") 
+
+mapplot
+
+```
+
+```{r 10avgGenres,  tidy = TRUE, include = FALSE, echo = FALSE, fig.width = 5, fig.height = 4, warning = FALSE}
+genres_IMDb = df %>%
+  select(Genres,IMDb)%>%
+  separate('IMDb', "IMDb", sep="/", extra="drop")%>%
+  separate('Genres','Genres',sep = ",",extra = "drop")%>%
+  group_by(Genres)%>%
+  transform(IMDb = as.numeric(IMDb))%>%
+  filter(!(IMDb ==""),!(Genres ==""),IMDb<=10)
+meanIMdb_genres = aggregate(genres_IMDb$IMDb,by = list(genres_IMDb$Genres),FUN = mean)
+meanIMdb_genres = arrange(meanIMdb_genres,desc(x))%>%
+  slice(1:10)
+colnames(meanIMdb_genres) = c("Genres","IMDb")
+b= barplot(height = meanIMdb_genres$IMDb,
+        xlab = "Genres",
+        ylab = "IMDb",
+        ylim = c(0,8),
+        col = c( "#006e99","#66aa33","#E50914","#FF9900"),
+        legend.text = TRUE,
+        axisnames = TRUE,
+        names.arg = meanIMdb_genres$Genres,
+        las=2,
+        cex.names = 0.8,
+        main = "Top 10 Genres by Average IMDb Ratings")
+text(b,meanIMdb_genres$IMDb*1.1,round(meanIMdb_genres$IMDb,digits = 2))
+
+```
+
+## Top 10 Primary Languages by percent
+
+- Most of the the movies in this dataset have English has its primary language.
+
+```{r primLang,  tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 7, fig.height = 4, warning = FALSE}
+MP_df = read.csv("movies.csv", sep=",", header=TRUE)
+data = MP_df%>%
+  separate("Language","Language",sep = ",", extra = "drop")%>%
+  group_by(Language)
+Lan = table(data$Language)
+Lan = data.frame(Lan)%>%
+  transform(Var1 = as.character(Var1))%>%
+  arrange(desc(Freq))%>%
+  slice(1:11)%>%
+  filter(!(Var1 == ""))
+
+ fig <- plot_ly(Lan, labels = ~Var1,values = ~Freq, type = 'pie')
+ fig
+
+```
+
+## Distribution of IMDb Rating
+
+- Mean: 6.156
+- Standard Deviation: 1.163
+- 5-Number Summary: 1.1 5.5 6.3 7.0 9.8
+
+
+```{r dist,  tidy = TRUE, include = TRUE, echo = FALSE, fig.width = 7, fig.height = 3, warning = FALSE}
+IMDb = df%>%
+  select(IMDb)%>%
+  separate(IMDb,"IMDb",sep = "/",extra = "drop")%>%
+  transform(IMDb = as.numeric(IMDb))%>%
+  filter(!(IMDb == ""),IMDb<=10)
+ggplot(data = IMDb,aes(x = IMDb))+
+  geom_histogram(aes(y = ..density..),
+                 binwidth = .2,color = "black",fill = "#f3ce13")+
+  geom_density()+
+  ggtitle("Distribution of IMDb rating")
+
+# get summary 
+
+#mean(IMDb$IMDb)
+#sd(IMDb$IMDb)
+#fivenum(IMDb$IMDb)
+
+```
+
+
